@@ -59,5 +59,6 @@ response.mp3
 # API keys and sensitive data
 config.py
 secrets.py
+.env
 .env.local
 .env.production
