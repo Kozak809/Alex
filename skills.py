@@ -6,23 +6,16 @@ import random
 import pygame
 import keyboard
 from subprocess import Popen
+import base64
+from datetime import datetime
 
 def open_browser(query=None, novoice=False):
     if query:
-        # Проверяем, похоже ли на URL или доменное имя
-        query_lower = query.lower().strip()
-        
-        # Если содержит точку и похоже на домен (например, openai.com, google.com)
-        if '.' in query_lower and not ' ' in query_lower.split('.')[0]:
-            # Это похоже на доменное имя
-            if not query_lower.startswith('http'):
-                url = f"https://{query_lower}"
-            else:
-                url = query_lower
+        # Просто открываем переданный URL
+        if not query.startswith('http'):
+            url = f"https://{query}"
         else:
-            # Это поисковый запрос
-            url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-        
+            url = query
         webbrowser.open(url)
     else:
         # Иначе просто открываем Google
@@ -87,11 +80,6 @@ def open_paint(novoice=False):
     Popen('mspaint.exe')
     if not novoice:
         voice.speaker('Открываю')
-
-def open_gpt(novoice=False):
-    subprocess.Popen(['start', r'C:\Users\Kozak\Desktop\gpt\index.html'], shell=True)
-    if not novoice:
-        voice.speaker('Открываю')
     
 def open_obsidian(novoice=False):
     subprocess.Popen(['start', r'.\links\Obsidian.lnk'], shell=True)
@@ -113,7 +101,107 @@ def open_viber(novoice=False):
     if not novoice:
         voice.speaker('Открываю')
 
+def open_telegram(novoice=False):
+    """Открывает Telegram Desktop."""
+    subprocess.Popen(['start', r'.\links\Telegram.lnk'], shell=True)
+    if not novoice:
+        voice.speaker('Открываю')
+
     
+def take_screenshot(novoice=False):
+    """Делает скриншот экрана и сохраняет в папку temp."""
+    try:
+        import pyautogui
+        # Создаем папку temp если её нет
+        if not os.path.exists('./temp'):
+            os.makedirs('./temp')
+        
+        # Генерируем имя файла с временной меткой
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        screenshot_path = f"./temp/screenshot_{timestamp}.png"
+        
+        # Делаем скриншот
+        screenshot = pyautogui.screenshot()
+        screenshot.save(screenshot_path)
+        
+        if not novoice:
+            voice.speaker('Скриншот сохранён')
+        
+        return screenshot_path
+    except Exception as e:
+        print(f"Ошибка при создании скриншота: {e}")
+        if not novoice:
+            voice.speaker('Ошибка при создании скриншота')
+        return None
+
+def analyze_temp_image(query=None, novoice=False):
+    """Анализирует последний скриншот с помощью GPT Vision."""
+    try:
+        import openai
+        from dotenv import load_dotenv
+        
+        load_dotenv()
+        openai.api_key = os.getenv('OPENAI_API_KEY')
+        
+        # Ищем последний скриншот в папке temp
+        temp_dir = './temp'
+        if not os.path.exists(temp_dir):
+            if not novoice:
+                voice.speaker('Папка temp не найдена')
+            return
+        
+        screenshots = [f for f in os.listdir(temp_dir) if f.startswith('screenshot_') and f.endswith('.png')]
+        if not screenshots:
+            if not novoice:
+                voice.speaker('Скриншоты не найдены')
+            return
+        
+        # Берем последний скриншот
+        latest_screenshot = sorted(screenshots)[-1]
+        image_path = os.path.join(temp_dir, latest_screenshot)
+        
+        # Кодируем изображение в base64
+        with open(image_path, 'rb') as image_file:
+            image_data = base64.b64encode(image_file.read()).decode('utf-8')
+        
+        # Анализируем с помощью GPT Vision
+        analysis_prompt = query if query else "Проанализируй это изображение и опиши что на нём."
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": analysis_prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{image_data}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=1024
+        )
+        
+        analysis_result = response.choices[0].message['content']
+        print(f"Анализ: {analysis_result}")
+        
+        if not novoice:
+            voice.speaker(analysis_result)
+        
+        return analysis_result
+    except Exception as e:
+        print(f"Ошибка при анализе изображения: {e}")
+        if not novoice:
+            voice.speaker('Ошибка при анализе изображения')
+        return None
+
 COMMANDS = {
     'браузер': open_browser,
     'калькулятор': open_calculator,    
@@ -128,13 +216,17 @@ COMMANDS = {
     'дискорд':open_discord,
     'стим':open_steam,
     'вайбер':open_viber,
-    'чат':open_gpt,
+    'телеграм': open_telegram,
+    'скрин': take_screenshot,
+    'скриншот': take_screenshot,
+    'анализ': analyze_temp_image,
+    'анализ фото': analyze_temp_image,
 }
 
 def execute_command(command_word, novoice=False, query=None):
     if command_word in COMMANDS:
-        # Для браузера передаём запрос, если он есть
-        if command_word == 'браузер' and query:
+        # Для браузера и анализа передаём запрос, если он есть
+        if (command_word == 'браузер' or command_word == 'анализ' or command_word == 'анализ фото') and query:
             COMMANDS[command_word](query=query, novoice=novoice)
         else:
             COMMANDS[command_word](novoice=novoice)
